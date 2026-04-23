@@ -147,6 +147,7 @@ zotero-mcp setup --semantic-config-only
 - **Default (all-MiniLM-L6-v2)**: Free, runs locally, good for most use cases
 - **OpenAI**: Better quality, requires API key (`text-embedding-3-small` or `text-embedding-3-large`)
 - **Gemini**: Better quality, requires API key (`gemini-embedding-001`)
+- **Voyage**: Better retrieval quality, requires API key (`voyage-4-large`)
 
 **Update Frequency Options:**
 - **Manual**: Update only when you run `zotero-mcp update-db`
@@ -182,7 +183,7 @@ zotero-mcp db-status
 - *"Studies about social media influence on mental health"*
 - *"Find papers conceptually similar to this abstract: [paste abstract]"*
 
-The semantic search provides similarity scores and finds papers based on conceptual understanding, not just keyword matching.
+The semantic search provides similarity scores and finds papers based on conceptual understanding, not just keyword matching. Optional reranking can improve result ordering without changing the result schema.
 
 ## 🖥️ Setup & Usage
 
@@ -283,14 +284,32 @@ zotero-mcp setup --no-local --api-key YOUR_API_KEY --library-id YOUR_LIBRARY_ID
 - `ZOTERO_LIBRARY_TYPE`: The type of library (user or group, default: user)
 
 **Semantic Search:**
-- `ZOTERO_EMBEDDING_MODEL`: Embedding model to use (default, openai, gemini)
+- `ZOTERO_EMBEDDING_MODEL`: Embedding model to use (default, openai, gemini, voyage)
 - `OPENAI_API_KEY`: Your OpenAI API key (for OpenAI embeddings)
 - `OPENAI_EMBEDDING_MODEL`: OpenAI model name (text-embedding-3-small, text-embedding-3-large)
 - `OPENAI_BASE_URL`: Custom OpenAI endpoint URL (optional, for use with compatible APIs)
 - `GEMINI_API_KEY`: Your Gemini API key (for Gemini embeddings)
 - `GEMINI_EMBEDDING_MODEL`: Gemini model name (gemini-embedding-001)
 - `GEMINI_BASE_URL`: Custom Gemini endpoint URL (optional, for use with compatible APIs)
+- `VOYAGE_API_KEY`: Your Voyage API key (for Voyage embeddings and optional reranking)
+- `VOYAGE_EMBEDDING_MODEL`: Voyage embedding model name (default: `voyage-4-large`)
 - `ZOTERO_DB_PATH`: Custom `zotero.sqlite` path (optional)
+
+Voyage reranking is configured in `semantic_search.reranker` inside the JSON config file, for example:
+
+```json
+{
+  "semantic_search": {
+    "reranker": {
+      "enabled": true,
+      "provider": "voyage",
+      "model": "rerank-2.5",
+      "candidate_multiplier": 3,
+      "truncation": true
+    }
+  }
+}
+```
 
 ### Command-Line Options
 

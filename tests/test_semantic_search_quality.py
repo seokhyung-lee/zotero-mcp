@@ -8,7 +8,9 @@ Covers:
 """
 
 import importlib.util
+import json
 import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,12 +21,89 @@ if sys.version_info >= (3, 14):
         allow_module_level=True,
     )
 
-from zotero_mcp import semantic_search
 
+def _install_test_dependency_stubs() -> None:
+    """Install lightweight stubs so mock-based tests can run without extras."""
+    if importlib.util.find_spec("dotenv") is None:
+        dotenv_module = types.ModuleType("dotenv")
+        dotenv_module.load_dotenv = lambda *args, **kwargs: None
+        sys.modules["dotenv"] = dotenv_module
+
+    if importlib.util.find_spec("markitdown") is None:
+        markitdown_module = types.ModuleType("markitdown")
+        markitdown_module.MarkItDown = type("MarkItDown", (), {})
+        sys.modules["markitdown"] = markitdown_module
+
+    if importlib.util.find_spec("unidecode") is None:
+        unidecode_module = types.ModuleType("unidecode")
+        unidecode_module.unidecode = lambda text: text
+        sys.modules["unidecode"] = unidecode_module
+
+    if importlib.util.find_spec("pyzotero") is None:
+        pyzotero_module = types.ModuleType("pyzotero")
+        zotero_module = types.ModuleType("pyzotero.zotero")
+        zotero_module.Zotero = type("Zotero", (), {})
+        zotero_module.build_url = lambda *args, **kwargs: ""
+        pyzotero_module.zotero = zotero_module
+        sys.modules["pyzotero"] = pyzotero_module
+        sys.modules["pyzotero.zotero"] = zotero_module
+
+    if importlib.util.find_spec("chromadb") is None:
+        chromadb_module = types.ModuleType("chromadb")
+        chromadb_config_module = types.ModuleType("chromadb.config")
+        chromadb_utils_module = types.ModuleType("chromadb.utils")
+        chromadb_embedding_functions_module = types.ModuleType("chromadb.utils.embedding_functions")
+
+        class EmbeddingFunction:
+            """Minimal generic-compatible embedding-function base class."""
+
+            @classmethod
+            def __class_getitem__(cls, item):
+                return cls
+
+        class Settings:
+            """Simple settings stub."""
+
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        class DefaultEmbeddingFunction:
+            """Minimal default embedding stub for import-time safety."""
+
+            max_input_tokens = 256
+
+            def __call__(self, input):
+                return []
+
+        class PersistentClient:
+            """Placeholder persistent client stub."""
+
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+
+        chromadb_embedding_functions_module.DefaultEmbeddingFunction = DefaultEmbeddingFunction
+        chromadb_utils_module.embedding_functions = chromadb_embedding_functions_module
+        chromadb_config_module.Settings = Settings
+        chromadb_module.Documents = list
+        chromadb_module.EmbeddingFunction = EmbeddingFunction
+        chromadb_module.Embeddings = list
+        chromadb_module.PersistentClient = PersistentClient
+        chromadb_module.utils = chromadb_utils_module
+        sys.modules["chromadb"] = chromadb_module
+        sys.modules["chromadb.config"] = chromadb_config_module
+        sys.modules["chromadb.utils"] = chromadb_utils_module
+        sys.modules["chromadb.utils.embedding_functions"] = chromadb_embedding_functions_module
+
+
+_install_test_dependency_stubs()
+
+semantic_search = importlib.import_module("zotero_mcp.semantic_search")
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class FakeChromaClient:
     """Minimal ChromaClient stub for unit tests."""
@@ -78,6 +157,7 @@ def _make_item(key, title="Test", abstract="Abstract", fulltext="", creators=Non
 # Fix 1: Combine structured fields + fulltext
 # ---------------------------------------------------------------------------
 
+
 class TestCombineStructuredAndFulltext:
     def _make_search(self):
         with patch.object(semantic_search, "get_zotero_client", return_value=object()):
@@ -118,6 +198,7 @@ class TestCombineStructuredAndFulltext:
 # Fix 2: Gemini query/document embedding asymmetry
 # ---------------------------------------------------------------------------
 
+
 class TestGeminiQueryEmbedding:
     def test_gemini_embed_query_uses_retrieval_query(self):
         """Verify GeminiEmbeddingFunction.embed_query passes retrieval_query task type."""
@@ -141,8 +222,6 @@ class TestGeminiQueryEmbedding:
 
         # Verify embed_content was called
         mock_client.models.embed_content.assert_called_once()
-        call_kwargs = mock_client.models.embed_content.call_args
-        config_arg = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
         # Verify the task_type was retrieval_query
         mock_types.EmbedContentConfig.assert_called_once_with(task_type="retrieval_query")
         assert result == [0.1, 0.2, 0.3]
@@ -173,9 +252,65 @@ class TestGeminiQueryEmbedding:
         )
 
 
+class TestVoyageEmbedding:
+    def test_voyage_call_uses_document_input_type(self):
+        from zotero_mcp.chroma_client import VoyageEmbeddingFunction
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.embeddings = [[0.1, 0.2, 0.3]]
+        mock_client.embed.return_value = mock_response
+
+        ef = VoyageEmbeddingFunction.__new__(VoyageEmbeddingFunction)
+        ef.model_name = "voyage-4-large"
+        ef.client = mock_client
+        ef.truncation = True
+
+        result = ef(["doc text"])
+
+        mock_client.embed.assert_called_once_with(
+            ["doc text"],
+            model="voyage-4-large",
+            input_type="document",
+            truncation=True,
+        )
+        assert result == [[0.1, 0.2, 0.3]]
+
+    def test_voyage_embed_query_uses_query_input_type(self):
+        from zotero_mcp.chroma_client import VoyageEmbeddingFunction
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.embeddings = [[0.4, 0.5, 0.6]]
+        mock_client.embed.return_value = mock_response
+
+        ef = VoyageEmbeddingFunction.__new__(VoyageEmbeddingFunction)
+        ef.model_name = "voyage-4-large"
+        ef.client = mock_client
+        ef.truncation = False
+
+        result = ef.embed_query("query text")
+
+        mock_client.embed.assert_called_once_with(
+            ["query text"],
+            model="voyage-4-large",
+            input_type="query",
+            truncation=False,
+        )
+        assert result == [0.4, 0.5, 0.6]
+
+    def test_voyage_missing_api_key_raises_clear_error(self):
+        from zotero_mcp.chroma_client import VoyageEmbeddingFunction
+
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(ValueError, match="Voyage API key is required"):
+                VoyageEmbeddingFunction(api_key=None)
+
+
 # ---------------------------------------------------------------------------
 # gemini-embedding-2-preview support
 # ---------------------------------------------------------------------------
+
 
 class TestGeminiV2Support:
     """Coverage for the v2-model-specific code paths.
@@ -196,6 +331,7 @@ class TestGeminiV2Support:
         the post-__init__ instance shape for v2 models.
         """
         from zotero_mcp.chroma_client import GeminiEmbeddingFunction
+
         ef = GeminiEmbeddingFunction.__new__(GeminiEmbeddingFunction)
         ef.model_name = model_name
         ef.client = mock_client
@@ -223,9 +359,7 @@ class TestGeminiV2Support:
         call_kwargs = mock_client.models.embed_content.call_args.kwargs
         # v2 uses no EmbedContentConfig — task instruction goes in the prompt
         assert "config" not in call_kwargs
-        assert call_kwargs["contents"] == [
-            f"{GeminiEmbeddingFunction.V2_DOC_PREFIX}doc text"
-        ]
+        assert call_kwargs["contents"] == [f"{GeminiEmbeddingFunction.V2_DOC_PREFIX}doc text"]
         mock_types.EmbedContentConfig.assert_not_called()
 
     def test_v2_embed_query_prepends_query_prefix_no_config(self):
@@ -247,9 +381,7 @@ class TestGeminiV2Support:
         mock_client.models.embed_content.assert_called_once()
         call_kwargs = mock_client.models.embed_content.call_args.kwargs
         assert "config" not in call_kwargs
-        assert call_kwargs["contents"] == [
-            f"{GeminiEmbeddingFunction.V2_QUERY_PREFIX}query text"
-        ]
+        assert call_kwargs["contents"] == [f"{GeminiEmbeddingFunction.V2_QUERY_PREFIX}query text"]
         mock_types.EmbedContentConfig.assert_not_called()
         assert result == [0.4, 0.5, 0.6]
 
@@ -280,7 +412,7 @@ class TestGeminiV2Support:
         # Must start with the v2 query prefix
         assert sent.startswith(GeminiEmbeddingFunction.V2_QUERY_PREFIX)
         # Body after the prefix must be truncated (not the full 50_000 chars)
-        body = sent[len(GeminiEmbeddingFunction.V2_QUERY_PREFIX):]
+        body = sent[len(GeminiEmbeddingFunction.V2_QUERY_PREFIX) :]
         assert len(body) == 7980 * 4  # truncate() uses 4 chars/token
 
     def test_v2_batch_preserves_order_across_chunks(self):
@@ -295,8 +427,7 @@ class TestGeminiV2Support:
         def fake_embed_content(model, contents, **kwargs):
             response = MagicMock()
             response.embeddings = [
-                MagicMock(values=[float(ord(c[len(GeminiEmbeddingFunction.V2_DOC_PREFIX)]))])
-                for c in contents
+                MagicMock(values=[float(ord(c[len(GeminiEmbeddingFunction.V2_DOC_PREFIX)]))]) for c in contents
             ]
             return response
 
@@ -434,6 +565,7 @@ class TestDefaultEFUsesQueryTexts:
 # Fix 3: Model-aware tokenizer
 # ---------------------------------------------------------------------------
 
+
 class TestModelAwareTokenizer:
     def test_openai_truncate_uses_tiktoken(self):
         from zotero_mcp.chroma_client import OpenAIEmbeddingFunction
@@ -497,6 +629,7 @@ class TestModelAwareTokenizer:
 # Fix: all encode() call sites pass disallowed_special=().
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(
     not importlib.util.find_spec("tiktoken"),
     reason="tiktoken not installed",
@@ -505,14 +638,14 @@ class TestTiktokenSpecialTokenHandling:
     """Text containing tiktoken special tokens must not raise ValueError."""
 
     SPECIAL_TOKEN_TEXT = (
-        "The model uses <|endoftext|> as a separator token. "
-        "Other tokens include <|fim_prefix|> and <|fim_suffix|>."
+        "The model uses <|endoftext|> as a separator token. Other tokens include <|fim_prefix|> and <|fim_suffix|>."
     )
 
     @staticmethod
     def _expected_truncation(text, max_tokens):
         """Compute expected tiktoken truncation for exact-output assertions."""
         import tiktoken
+
         enc = tiktoken.get_encoding("cl100k_base")
         tokens = enc.encode(text, disallowed_special=())[:max_tokens]
         return enc.decode(tokens)
@@ -558,6 +691,7 @@ class TestTiktokenSpecialTokenHandling:
 # ---------------------------------------------------------------------------
 # Fix 5: Cross-encoder re-ranking
 # ---------------------------------------------------------------------------
+
 
 class TestReranking:
     def _make_search_with_reranker(self, enabled=True):
@@ -617,3 +751,263 @@ class TestReranking:
         s.search("test", limit=5)
 
         assert s.chroma_client._last_query_kwargs["n_results"] == 5
+
+    def test_legacy_reranker_config_defaults_to_cross_encoder(self, tmp_path):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "semantic_search": {
+                        "reranker": {
+                            "enabled": True,
+                            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                            "candidate_multiplier": 4,
+                        }
+                    }
+                }
+            )
+        )
+
+        with patch.object(semantic_search, "get_zotero_client", return_value=object()):
+            search = semantic_search.ZoteroSemanticSearch(
+                chroma_client=FakeChromaClient(),
+                config_path=str(config_path),
+            )
+
+        assert search._reranker_config["provider"] == "cross-encoder"
+        assert search._reranker_config["candidate_multiplier"] == 4
+
+    def test_unknown_reranker_provider_raises(self):
+        s = self._make_search_with_reranker(enabled=True)
+        s._reranker_config = {"enabled": True, "provider": "mystery", "model": "x"}
+
+        with pytest.raises(ValueError, match="Unknown reranker provider"):
+            s._get_reranker()
+
+    def test_voyage_reranker_reorders_results_without_schema_change(self):
+        s = self._make_search_with_reranker(enabled=True)
+        s._reranker_config = {
+            "enabled": True,
+            "provider": "voyage",
+            "model": "rerank-2.5",
+            "candidate_multiplier": 3,
+            "truncation": True,
+        }
+
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = [1, 2]
+        s._reranker = mock_reranker
+
+        s.zotero_client = MagicMock()
+        s.zotero_client.item.return_value = {"data": {"title": "mock"}}
+
+        result = s.search("dogs", limit=2)
+
+        assert result["results"][0]["metadata"]["title"] == "Dogs"
+        assert "rerank_score" not in result["results"][0]
+        mock_reranker.rerank.assert_called_once()
+
+
+class TestVoyageReranker:
+    def test_voyage_reranker_returns_ranked_indices(self):
+        mock_client = MagicMock()
+        mock_client.rerank.return_value = MagicMock(
+            results=[
+                MagicMock(index=2, relevance_score=0.9),
+                MagicMock(index=0, relevance_score=0.8),
+            ]
+        )
+
+        reranker = semantic_search.VoyageReranker.__new__(semantic_search.VoyageReranker)
+        reranker.client = mock_client
+        reranker.model_name = "rerank-2.5"
+        reranker.truncation = True
+
+        ranked = reranker.rerank("query", ["a", "b", "c"], top_k=2)
+
+        mock_client.rerank.assert_called_once_with(
+            "query",
+            ["a", "b", "c"],
+            model="rerank-2.5",
+            top_k=2,
+            truncation=True,
+        )
+        assert ranked == [2, 0]
+
+
+class TestVoyageConfig:
+    def test_create_chroma_client_merges_voyage_env_without_overriding_file(self, tmp_path, monkeypatch):
+        from zotero_mcp import chroma_client
+
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "semantic_search": {
+                        "embedding_model": "voyage",
+                        "embedding_config": {"model_name": "voyage-file-model"},
+                    }
+                }
+            )
+        )
+
+        monkeypatch.setenv("VOYAGE_API_KEY", "voyage-secret")
+        monkeypatch.setenv("VOYAGE_EMBEDDING_MODEL", "voyage-env-model")
+
+        captured = {}
+
+        def fake_init(self, collection_name, persist_directory=None, embedding_model="default", embedding_config=None):
+            captured["collection_name"] = collection_name
+            captured["embedding_model"] = embedding_model
+            captured["embedding_config"] = embedding_config
+
+        with patch.object(chroma_client.ChromaClient, "__init__", fake_init):
+            client = chroma_client.create_chroma_client(str(config_path))
+
+        assert isinstance(client, chroma_client.ChromaClient)
+        assert captured["embedding_model"] == "voyage"
+        assert captured["embedding_config"]["api_key"] == "voyage-secret"
+        assert captured["embedding_config"]["model_name"] == "voyage-file-model"
+        assert captured["embedding_config"]["truncation"] is True
+
+    def test_setup_info_obfuscates_voyage_api_key(self):
+        from zotero_mcp.cli import obfuscate_config_for_display
+
+        result = obfuscate_config_for_display(
+            {
+                "VOYAGE_API_KEY": "voyage-secret",
+                "OPENAI_API_KEY": "openai-secret",
+                "ZOTERO_LIBRARY_ID": "123456",
+            }
+        )
+
+        assert result["VOYAGE_API_KEY"].startswith("voya")
+        assert result["VOYAGE_API_KEY"] != "voyage-secret"
+        assert result["OPENAI_API_KEY"] != "openai-secret"
+        assert result["ZOTERO_LIBRARY_ID"] != "123456"
+
+    def test_setup_semantic_search_preserves_existing_reranker(self):
+        from zotero_mcp.setup_helper import setup_semantic_search
+
+        existing_config = {
+            "embedding_model": "openai",
+            "embedding_config": {"model_name": "text-embedding-3-small"},
+            "reranker": {
+                "enabled": True,
+                "provider": "cross-encoder",
+                "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                "candidate_multiplier": 5,
+            },
+        }
+
+        inputs = iter(["n", "1", "1", "", "", "y"])
+        with patch("builtins.input", side_effect=lambda *args: next(inputs)):
+            result = setup_semantic_search(existing_config)
+
+        assert result["reranker"] == existing_config["reranker"]
+
+    def test_standalone_config_only_persists_voyage_embedding_env(self, tmp_path):
+        from zotero_mcp import setup_helper
+
+        semantic_config = {
+            "embedding_model": "openai",
+            "embedding_config": {
+                "api_key": "openai-secret",
+                "model_name": "text-embedding-3-small",
+                "base_url": "https://example.invalid",
+            },
+        }
+
+        with patch.object(setup_helper.Path, "home", return_value=tmp_path):
+            cfg_path = setup_helper._write_standalone_config(
+                local=True,
+                api_key="",
+                library_id="",
+                library_type="user",
+                semantic_config=semantic_config,
+                no_claude=False,
+            )
+
+        saved = json.loads(cfg_path.read_text())
+        client_env = saved["client_env"]
+        assert "ZOTERO_EMBEDDING_MODEL" not in client_env
+        assert "OPENAI_API_KEY" not in client_env
+        assert "OPENAI_EMBEDDING_MODEL" not in client_env
+        assert "OPENAI_BASE_URL" not in client_env
+
+    def test_standalone_config_persists_voyage_embedding_env(self, tmp_path):
+        from zotero_mcp import setup_helper
+
+        semantic_config = {
+            "embedding_model": "voyage",
+            "embedding_config": {
+                "api_key": "voyage-secret",
+                "model_name": "voyage-4-large",
+            },
+        }
+
+        with patch.object(setup_helper.Path, "home", return_value=tmp_path):
+            cfg_path = setup_helper._write_standalone_config(
+                local=True,
+                api_key="",
+                library_id="",
+                library_type="user",
+                semantic_config=semantic_config,
+                no_claude=False,
+            )
+
+        saved = json.loads(cfg_path.read_text())
+        client_env = saved["client_env"]
+        assert client_env["ZOTERO_EMBEDDING_MODEL"] == "voyage"
+        assert client_env["VOYAGE_API_KEY"] == "voyage-secret"
+        assert client_env["VOYAGE_EMBEDDING_MODEL"] == "voyage-4-large"
+
+
+class TestCollectionCompatibilityReset:
+    def test_config_json_signature_check_runs_even_with_collection_metadata(self, tmp_path):
+        from zotero_mcp import chroma_client
+
+        class FakeEmbeddingFunction:
+            model_name = "voyage-4-large"
+
+            @staticmethod
+            def name() -> str:
+                return "voyage"
+
+            def get_config(self) -> dict[str, object]:
+                return {"model_name": "voyage-4-large", "truncation": True}
+
+        existing_collection = MagicMock()
+        existing_collection.metadata = {"persisted": "metadata"}
+        recreated_collection = MagicMock()
+        fake_row = MagicMock(
+            config_json_str=json.dumps(
+                {
+                    "embedding_function": {
+                        "name": "openai",
+                        "config": {
+                            "model_name": "text-embedding-3-small",
+                            "truncation": None,
+                        },
+                    }
+                }
+            )
+        )
+        fake_client = MagicMock()
+        fake_client.get_or_create_collection.return_value = existing_collection
+        fake_client.create_collection.return_value = recreated_collection
+        fake_client._sysdb.get_collections.return_value = [fake_row]
+
+        with patch.object(chroma_client.chromadb, "PersistentClient", return_value=fake_client):
+            with patch.object(
+                chroma_client.ChromaClient, "_create_embedding_function", return_value=FakeEmbeddingFunction()
+            ):
+                client = chroma_client.ChromaClient(
+                    persist_directory=str(tmp_path / "chroma"),
+                    embedding_model="voyage",
+                    embedding_config={"model_name": "voyage-4-large", "truncation": True},
+                )
+
+        fake_client.delete_collection.assert_called_once_with(name="zotero_library")
+        fake_client.create_collection.assert_called_once()
+        assert client.collection is recreated_collection

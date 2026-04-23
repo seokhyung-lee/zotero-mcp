@@ -1,11 +1,11 @@
 """Tests for Feature 5: Add by URL (zotero_add_by_url)."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+from conftest import FakeZotero
 
 from zotero_mcp import server
-from conftest import DummyContext, FakeZotero
-
 
 # ---------------------------------------------------------------------------
 # Sample arXiv Atom XML response
@@ -74,6 +74,7 @@ ARXIV_OLD_FORMAT_XML = """\
 # Helper: mock requests.get for arXiv API
 # ---------------------------------------------------------------------------
 
+
 def _make_arxiv_response(xml_text, status_code=200):
     """Create a mock requests.Response for arXiv API."""
     resp = MagicMock()
@@ -90,6 +91,7 @@ def _make_arxiv_response(xml_text, status_code=200):
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def fake_zot_url():
     """FakeZotero extended for add_by_url tests."""
@@ -100,15 +102,14 @@ def fake_zot_url():
 @pytest.fixture
 def patch_write_client(fake_zot_url):
     """Patch _get_write_client to return (fake_zot, fake_zot) for web-only mode."""
-    with patch(
-        "zotero_mcp.tools._helpers._get_write_client", return_value=(fake_zot_url, fake_zot_url)
-    ):
+    with patch("zotero_mcp.tools._helpers._get_write_client", return_value=(fake_zot_url, fake_zot_url)):
         yield fake_zot_url
 
 
 # ---------------------------------------------------------------------------
 # DOI URL routing
 # ---------------------------------------------------------------------------
+
 
 class TestDoiUrlRouting:
     """DOI URLs should delegate to add_by_doi logic."""
@@ -141,6 +142,7 @@ class TestDoiUrlRouting:
 # ---------------------------------------------------------------------------
 # arXiv URL handling
 # ---------------------------------------------------------------------------
+
 
 class TestArxivUrl:
     """arXiv URLs should parse the arXiv API and create preprint items."""
@@ -225,9 +227,7 @@ class TestArxivUrl:
         creators = item.get("creators", [])
         assert len(creators) == 2
         # Check that author names are present (exact format depends on implementation)
-        creator_names = [
-            c.get("lastName", "") or c.get("name", "") for c in creators
-        ]
+        creator_names = [c.get("lastName", "") or c.get("name", "") for c in creators]
         assert any("Smith" in n for n in creator_names)
         assert any("Jones" in n for n in creator_names)
 
@@ -269,6 +269,7 @@ class TestArxivUrl:
 # Generic URL -> webpage item
 # ---------------------------------------------------------------------------
 
+
 class TestGenericUrl:
     """Non-DOI, non-arXiv URLs should create a webpage item."""
 
@@ -292,6 +293,7 @@ class TestGenericUrl:
 # ---------------------------------------------------------------------------
 # arXiv API error handling
 # ---------------------------------------------------------------------------
+
 
 class TestArxivErrors:
     """Error handling for arXiv API responses."""
@@ -330,6 +332,7 @@ class TestArxivErrors:
 # ---------------------------------------------------------------------------
 # arXiv XML namespace handling
 # ---------------------------------------------------------------------------
+
 
 class TestArxivXmlNamespace:
     """Verify correct XML namespace handling for arXiv Atom feed."""
@@ -372,6 +375,7 @@ class TestArxivXmlNamespace:
 # HTTPS enforcement for arXiv API
 # ---------------------------------------------------------------------------
 
+
 class TestArxivHttps:
     """The arXiv API should always be called over HTTPS."""
 
@@ -382,9 +386,7 @@ class TestArxivHttps:
         with patch("zotero_mcp.tools.write.requests.get", return_value=mock_resp) as mock_get:
             server.add_by_url(url="https://arxiv.org/abs/2401.00001", ctx=dummy_ctx)
             call_url = mock_get.call_args[0][0]
-            assert call_url.startswith("https://"), (
-                f"arXiv API URL should use HTTPS, got: {call_url}"
-            )
+            assert call_url.startswith("https://"), f"arXiv API URL should use HTTPS, got: {call_url}"
 
     def test_timeout_parameter_set(self, dummy_ctx, patch_write_client):
         """requests.get for arXiv should include a timeout parameter."""
@@ -400,6 +402,7 @@ class TestArxivHttps:
 # ---------------------------------------------------------------------------
 # Hybrid mode / local-only rejection
 # ---------------------------------------------------------------------------
+
 
 class TestHybridMode:
     """Write operations require hybrid mode (web credentials)."""
@@ -427,9 +430,7 @@ class TestHybridMode:
 
         mock_resp = _make_arxiv_response(ARXIV_ATOM_XML)
 
-        with patch(
-            "zotero_mcp.tools._helpers._get_write_client", return_value=(read_zot, write_zot)
-        ):
+        with patch("zotero_mcp.tools._helpers._get_write_client", return_value=(read_zot, write_zot)):
             with patch("zotero_mcp.tools.write.requests.get", return_value=mock_resp):
                 server.add_by_url(
                     url="https://arxiv.org/abs/2401.00001",
@@ -444,6 +445,7 @@ class TestHybridMode:
 # ---------------------------------------------------------------------------
 # Tags and collections applied
 # ---------------------------------------------------------------------------
+
 
 class TestTagsAndCollections:
     """Tags and collections should be applied to created items."""

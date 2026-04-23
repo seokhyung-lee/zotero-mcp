@@ -1,20 +1,19 @@
 """Write / mutation tool functions for the Zotero MCP server."""
 
-from typing import Literal
 import json
 import os
 import re
 import tempfile
-import xml.etree.ElementTree as ET
-
 import time as _time
+import xml.etree.ElementTree as ET
+from typing import Literal
 
 import requests
 from fastmcp import Context
 
-from zotero_mcp._app import mcp
 from zotero_mcp import client as _client
 from zotero_mcp import utils as _utils
+from zotero_mcp._app import mcp
 from zotero_mcp.tools import _helpers
 
 # Accessed as _helpers.X so that monkeypatch/mock on the module attribute works.
@@ -23,7 +22,7 @@ CROSSREF_TYPE_MAP = _helpers.CROSSREF_TYPE_MAP
 
 @mcp.tool(
     name="zotero_batch_update_tags",
-    description="Batch update tags across multiple items matching a search query or tag filter."
+    description="Batch update tags across multiple items matching a search query or tag filter.",
 )
 def batch_update_tags(
     query: str = "",
@@ -32,7 +31,7 @@ def batch_update_tags(
     tag: str | list[str] | None = None,
     limit: int | str = 50,
     *,
-    ctx: Context
+    ctx: Context,
 ) -> str:
     """
     Batch update tags across multiple items matching a search query or tag filter.
@@ -86,6 +85,7 @@ def batch_update_tags(
                 # Handle JSON string like '["test"]'
                 try:
                     import json
+
                     parsed = json.loads(tag)
                     if isinstance(parsed, list):
                         tag = " || ".join(str(t).strip() for t in parsed if str(t).strip())
@@ -220,14 +220,9 @@ def batch_update_tags(
         "To create a subcollection, pass parent_collection (not parent_key) as either "
         "a collection key (8-character string like 'KMMQDFQ4') or a collection name. "
         "Use zotero_search_collections to find collection keys."
-    )
+    ),
 )
-def create_collection(
-    name: str,
-    parent_collection: str | None = None,
-    *,
-    ctx: Context
-) -> str:
+def create_collection(name: str, parent_collection: str | None = None, *, ctx: Context) -> str:
     try:
         read_zot, write_zot = _helpers._get_write_client(ctx)
     except ValueError as e:
@@ -238,7 +233,7 @@ def create_collection(
 
         # Resolve parent_collection name if it doesn't look like a key
         parent_key = parent_collection
-        if parent_collection and not re.match(r'^[A-Z0-9]{8}$', parent_collection):
+        if parent_collection and not re.match(r"^[A-Z0-9]{8}$", parent_collection):
             try:
                 keys = _helpers._resolve_collection_names(read_zot, [parent_collection], ctx=ctx)
                 parent_key = keys[0] if keys else None
@@ -256,10 +251,7 @@ def create_collection(
         if isinstance(result, dict) and result.get("success"):
             coll_key = next(iter(result["success"].values()))
             parent_info = f" under parent '{parent_collection}'" if parent_collection else ""
-            return (
-                f"Successfully created collection \"{name}\"{parent_info}\n\n"
-                f"Collection key: `{coll_key}`"
-            )
+            return f'Successfully created collection "{name}"{parent_info}\n\nCollection key: `{coll_key}`'
         return f"Failed to create collection: {result}"
 
     except Exception as e:
@@ -267,15 +259,8 @@ def create_collection(
         return f"Error creating collection: {e}"
 
 
-@mcp.tool(
-    name="zotero_search_collections",
-    description="Search for collections by name to find their keys."
-)
-def search_collections(
-    query: str,
-    *,
-    ctx: Context
-) -> str:
+@mcp.tool(name="zotero_search_collections", description="Search for collections by name to find their keys.")
+def search_collections(query: str, *, ctx: Context) -> str:
     try:
         zot = _client.get_zotero_client()
         ctx.info(f"Searching collections for '{query}'")
@@ -285,10 +270,7 @@ def search_collections(
             return "No collections found in your Zotero library."
 
         words = query.lower().split()
-        matching = [
-            c for c in collections
-            if all(w in c.get("data", {}).get("name", "").lower() for w in words)
-        ]
+        matching = [c for c in collections if all(w in c.get("data", {}).get("name", "").lower() for w in words)]
 
         if not matching:
             return f"No collections found matching '{query}'"
@@ -319,17 +301,17 @@ def search_collections(
     name="zotero_manage_collections",
     description=(
         "Add or remove one or more items from collections. "
-        "item_keys must be an ARRAY of item keys, e.g. [\"KEY1\", \"KEY2\"] — not a single string. "
+        'item_keys must be an ARRAY of item keys, e.g. ["KEY1", "KEY2"] — not a single string. '
         "add_to and remove_from also accept arrays of collection keys. "
         "Use zotero_search_items to find item keys and zotero_search_collections to find collection keys."
-    )
+    ),
 )
 def manage_collections(
     item_keys: list[str] | str,
     add_to: list[str] | str | None = None,
     remove_from: list[str] | str | None = None,
     *,
-    ctx: Context
+    ctx: Context,
 ) -> str:
     try:
         read_zot, write_zot = _helpers._get_write_client(ctx)
@@ -350,6 +332,7 @@ def manage_collections(
 
         # Cache item fetches to avoid repeated API calls for the same key
         item_cache = {}
+
         def _get_item(key):
             if key not in item_cache:
                 item_cache[key] = write_zot.item(key)
@@ -386,8 +369,7 @@ def manage_collections(
 
 
 @mcp.tool(
-    name="zotero_add_by_doi",
-    description="Add a paper to your Zotero library by DOI. Fetches metadata from CrossRef."
+    name="zotero_add_by_doi", description="Add a paper to your Zotero library by DOI. Fetches metadata from CrossRef."
 )
 def add_by_doi(
     doi: str,
@@ -395,7 +377,7 @@ def add_by_doi(
     tags: list[str] | str | None = None,
     attach_mode: str = "auto",
     *,
-    ctx: Context
+    ctx: Context,
 ) -> str:
     try:
         read_zot, write_zot = _helpers._get_write_client(ctx)
@@ -441,28 +423,36 @@ def add_by_doi(
         creators = []
         for author in cr.get("author", []):
             if "family" in author:
-                creators.append({
-                    "creatorType": "author",
-                    "firstName": author.get("given", ""),
-                    "lastName": author["family"],
-                })
+                creators.append(
+                    {
+                        "creatorType": "author",
+                        "firstName": author.get("given", ""),
+                        "lastName": author["family"],
+                    }
+                )
             elif "name" in author:
-                creators.append({
-                    "creatorType": "author",
-                    "name": author["name"],
-                })
+                creators.append(
+                    {
+                        "creatorType": "author",
+                        "name": author["name"],
+                    }
+                )
         for editor in cr.get("editor", []):
             if "family" in editor:
-                creators.append({
-                    "creatorType": "editor",
-                    "firstName": editor.get("given", ""),
-                    "lastName": editor["family"],
-                })
+                creators.append(
+                    {
+                        "creatorType": "editor",
+                        "firstName": editor.get("given", ""),
+                        "lastName": editor["family"],
+                    }
+                )
             elif "name" in editor:
-                creators.append({
-                    "creatorType": "editor",
-                    "name": editor["name"],
-                })
+                creators.append(
+                    {
+                        "creatorType": "editor",
+                        "name": editor["name"],
+                    }
+                )
         if creators:
             item_data["creators"] = creators
 
@@ -513,9 +503,9 @@ def add_by_doi(
             title = item_data.get("title", normalized)
 
             # Attempt open-access PDF attachment (pass CrossRef metadata for arXiv fallback)
-            pdf_status = _helpers._try_attach_oa_pdf(write_zot, item_key, normalized, ctx,
-                                            crossref_metadata=cr,
-                                            attach_mode=attach_mode)
+            pdf_status = _helpers._try_attach_oa_pdf(
+                write_zot, item_key, normalized, ctx, crossref_metadata=cr, attach_mode=attach_mode
+            )
 
             return (
                 f"Successfully added: **{title}**\n\n"
@@ -538,8 +528,7 @@ def add_by_doi(
 
 
 @mcp.tool(
-    name="zotero_add_by_url",
-    description="Add a paper by URL. Supports DOI URLs, arXiv URLs, and general web pages."
+    name="zotero_add_by_url", description="Add a paper by URL. Supports DOI URLs, arXiv URLs, and general web pages."
 )
 def add_by_url(
     url: str,
@@ -547,7 +536,7 @@ def add_by_url(
     tags: list[str] | str | None = None,
     attach_mode: str = "auto",
     *,
-    ctx: Context
+    ctx: Context,
 ) -> str:
     try:
         read_zot, write_zot = _helpers._get_write_client(ctx)
@@ -562,8 +551,7 @@ def add_by_url(
         # DOI URL routing
         doi = _helpers._normalize_doi(url)
         if doi:
-            return add_by_doi(doi=url, collections=collections, tags=tags,
-                              attach_mode=attach_mode, ctx=ctx)
+            return add_by_doi(doi=url, collections=collections, tags=tags, attach_mode=attach_mode, ctx=ctx)
 
         # arXiv URL routing
         arxiv_id = _helpers._normalize_arxiv_id(url)
@@ -610,17 +598,14 @@ def _add_by_arxiv(arxiv_id, collections, tags, write_zot, ctx):
             timeout=30,
         )
         if resp.status_code == 429:
-            wait = 5 * (2 ** attempt)  # 5s, 10s, 20s
+            wait = 5 * (2**attempt)  # 5s, 10s, 20s
             ctx.info(f"arXiv API rate limit hit — waiting {wait}s before retry {attempt + 1}/3...")
             _time.sleep(wait)
             continue
         break
 
     if resp is None or resp.status_code == 429:
-        return (
-            f"arXiv API is rate-limiting requests. Please wait a moment and try again. "
-            f"(arXiv ID: {arxiv_id})"
-        )
+        return f"arXiv API is rate-limiting requests. Please wait a moment and try again. (arXiv ID: {arxiv_id})"
     resp.raise_for_status()
 
     root = ET.fromstring(resp.text)
@@ -647,11 +632,13 @@ def _add_by_arxiv(arxiv_id, collections, tags, write_zot, ctx):
         if name:
             parts = name.rsplit(" ", 1)
             if len(parts) == 2:
-                authors.append({
-                    "creatorType": "author",
-                    "firstName": parts[0],
-                    "lastName": parts[1],
-                })
+                authors.append(
+                    {
+                        "creatorType": "author",
+                        "firstName": parts[0],
+                        "lastName": parts[1],
+                    }
+                )
             else:
                 authors.append({"creatorType": "author", "name": name})
 
@@ -739,7 +726,7 @@ _UPDATE_ITEM_API_TO_PARAM = {
         "To add tags without removing existing ones, use add_tags (not tags). "
         "To remove specific tags, use remove_tags. "
         "Using tags replaces ALL existing tags — use add_tags/remove_tags for incremental changes."
-    )
+    ),
 )
 def update_item(
     item_key: str,
@@ -767,7 +754,7 @@ def update_item(
     isbn: str | None = None,
     book_title: str | None = None,
     *,
-    ctx: Context
+    ctx: Context,
 ) -> str:
     try:
         read_zot, write_zot = _helpers._get_write_client(ctx)
@@ -879,22 +866,16 @@ def update_item(
         skip_warning = ""
         if skipped:
             item_type = data.get("itemType", "unknown")
-            skip_warning = (
-                f"\n\nSkipped (not valid for item type "
-                f"'{item_type}'): {', '.join(skipped)}"
-            )
+            skip_warning = f"\n\nSkipped (not valid for item type '{item_type}'): {', '.join(skipped)}"
 
         if not changes:
             return "No changes to apply." + skip_warning
 
         resp = write_zot.update_item(item)
         if _helpers._handle_write_response(resp, ctx):
-            result = (
-                f"Successfully updated item `{item_key}`:\n\n"
-                + "\n".join(changes)
-            )
+            result = f"Successfully updated item `{item_key}`:\n\n" + "\n".join(changes)
             return result + skip_warning
-        return f"Failed to update item: write operation returned failure"
+        return "Failed to update item: write operation returned failure"
 
     except ValueError as e:
         return f"Input error: {e}"
@@ -903,16 +884,13 @@ def update_item(
         return f"Error updating item: {e}"
 
 
-@mcp.tool(
-    name="zotero_find_duplicates",
-    description="Find duplicate items in your library by title and/or DOI."
-)
+@mcp.tool(name="zotero_find_duplicates", description="Find duplicate items in your library by title and/or DOI.")
 def find_duplicates(
     method: Literal["title", "doi", "both"] = "both",
     collection_key: str | None = None,
     limit: int | str | None = 50,
     *,
-    ctx: Context
+    ctx: Context,
 ) -> str:
     try:
         zot = _client.get_zotero_client()
@@ -947,11 +925,11 @@ def find_duplicates(
         # Normalize and group
         def normalize_title(t):
             t = (t or "").lower().strip()
-            t = re.sub(r'[^\w\s]', '', t)
-            t = re.sub(r'\s+', ' ', t).strip()
+            t = re.sub(r"[^\w\s]", "", t)
+            t = re.sub(r"\s+", " ", t).strip()
             for article in ("a ", "an ", "the "):
                 if t.startswith(article):
-                    t = t[len(article):]
+                    t = t[len(article) :]
             return t
 
         groups = {}
@@ -1000,8 +978,7 @@ def find_duplicates(
             lines.append("")
 
         lines.append(
-            "\nTo merge, call `zotero_merge_duplicates` with the key you want to keep "
-            "and the keys to merge into it."
+            "\nTo merge, call `zotero_merge_duplicates` with the key you want to keep and the keys to merge into it."
         )
         return "\n".join(lines)
 
@@ -1018,15 +995,9 @@ def find_duplicates(
         "Dry-run by default — call with confirm=True to execute. "
         "Parameters: keeper_key (the item key to KEEP), "
         "duplicate_keys (ARRAY of item keys to merge into the keeper and then trash)."
-    )
+    ),
 )
-def merge_duplicates(
-    keeper_key: str,
-    duplicate_keys: list[str] | str,
-    confirm: bool = False,
-    *,
-    ctx: Context
-) -> str:
+def merge_duplicates(keeper_key: str, duplicate_keys: list[str] | str, confirm: bool = False, *, ctx: Context) -> str:
     try:
         read_zot, write_zot = _helpers._get_write_client(ctx)
     except ValueError as e:
@@ -1108,7 +1079,9 @@ def merge_duplicates(
                 f"**Tags to add:** {sorted(new_tags) if new_tags else 'none'}",
                 f"**Collections to add:** {sorted(new_collections) if new_collections else 'none'}",
                 f"**Child items to re-parent:** {total_children_to_move - skipped_attachment_count}",
-                f"  ({skipped_attachment_count} duplicate attachment(s) will be skipped)" if skipped_attachment_count else "  (notes, PDFs, annotations, highlights, etc.)",
+                f"  ({skipped_attachment_count} duplicate attachment(s) will be skipped)"
+                if skipped_attachment_count
+                else "  (notes, PDFs, annotations, highlights, etc.)",
                 "",
                 "Duplicates will be moved to **Trash** (recoverable in Zotero).",
                 "",
@@ -1184,6 +1157,7 @@ def merge_duplicates(
                 dup_item = write_zot.item(dup_key)
                 version = dup_item["version"]
                 from pyzotero.zotero import build_url
+
                 url = build_url(
                     write_zot.endpoint,
                     f"/{write_zot.library_type}/{write_zot.library_id}/items/{dup_key}",
@@ -1218,15 +1192,8 @@ def merge_duplicates(
         return f"Error merging duplicates: {e}"
 
 
-@mcp.tool(
-    name="zotero_get_pdf_outline",
-    description="Extract the table of contents / outline from a PDF attachment."
-)
-def get_pdf_outline(
-    item_key: str,
-    *,
-    ctx: Context
-) -> str:
+@mcp.tool(name="zotero_get_pdf_outline", description="Extract the table of contents / outline from a PDF attachment.")
+def get_pdf_outline(item_key: str, *, ctx: Context) -> str:
     try:
         zot = _client.get_zotero_client()
         ctx.info(f"Getting PDF outline for item {item_key}")
@@ -1281,7 +1248,7 @@ def get_pdf_outline(
         "Add an item to Zotero from a local PDF file. "
         "Attempts DOI extraction for rich metadata. "
         "File path must be absolute and point to a .pdf or .epub file."
-    )
+    ),
 )
 def add_from_file(
     file_path: str,
@@ -1290,7 +1257,7 @@ def add_from_file(
     collections: list[str] | str | None = None,
     tags: list[str] | str | None = None,
     *,
-    ctx: Context
+    ctx: Context,
 ) -> str:
     try:
         read_zot, write_zot = _helpers._get_write_client(ctx)
@@ -1320,6 +1287,7 @@ def add_from_file(
         if ext == ".pdf":
             try:
                 import fitz
+
                 doc = fitz.open(file_path)
 
                 # Check metadata
@@ -1335,7 +1303,7 @@ def add_from_file(
                 # Scan first page text
                 if not extracted_doi and doc.page_count > 0:
                     text = doc[0].get_text()[:3000]
-                    m = re.search(r'10\.\d{4,9}/[^\s]+', text)
+                    m = re.search(r"10\.\d{4,9}/[^\s]+", text)
                     if m:
                         found_doi = _helpers._normalize_doi(m.group(0))
                         if found_doi:
@@ -1350,7 +1318,7 @@ def add_from_file(
             ctx.info(f"Found DOI: {extracted_doi}")
             result_msg = add_by_doi(doi=extracted_doi, collections=collections, tags=tags, ctx=ctx)
             # Extract item key from result
-            key_match = re.search(r'Item key: `([^`]+)`', result_msg)
+            key_match = re.search(r"Item key: `([^`]+)`", result_msg)
             if key_match:
                 parent_key = key_match.group(1)
             else:

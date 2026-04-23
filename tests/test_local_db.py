@@ -1,8 +1,6 @@
 from pathlib import Path
 
-import pytest
-
-from zotero_mcp.local_db import ZoteroItem, LocalZoteroReader
+from zotero_mcp.local_db import LocalZoteroReader, ZoteroItem
 
 
 class FakeLocalZoteroReader(LocalZoteroReader):
@@ -114,9 +112,7 @@ class TestResolveAttachmentPath:
         base_dir.mkdir()
         # Write a prefs.js with baseAttachmentPath
         prefs = tmp_path / "prefs.js"
-        prefs.write_text(
-            f'user_pref("extensions.zotero.baseAttachmentPath", "{base_dir}");\n'
-        )
+        prefs.write_text(f'user_pref("extensions.zotero.baseAttachmentPath", "{base_dir}");\n')
         result = reader._resolve_attachment_path("X", "attachments:subfolder/paper.pdf")
         assert result == base_dir / "subfolder" / "paper.pdf"
 

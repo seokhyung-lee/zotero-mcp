@@ -10,10 +10,10 @@ import requests
 from zotero_mcp import client as _client
 from zotero_mcp import utils as _utils
 
-
 # ---------------------------------------------------------------------------
 # Pagination helper
 # ---------------------------------------------------------------------------
+
 
 def _paginate(zot_method, *args, max_items=None, **kwargs):
     """Fetch all results from a pyzotero method using manual pagination.
@@ -64,6 +64,7 @@ CROSSREF_TYPE_MAP = {
 # Write-operation helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_write_client(ctx):
     """Return (read_client, write_client) for hybrid-mode operations.
 
@@ -108,6 +109,7 @@ def _handle_write_response(response, ctx=None):
 # Input normalization
 # ---------------------------------------------------------------------------
 
+
 def _normalize_limit(limit: int | str | None, default: int = 10, max_val: int = 100) -> int:
     """Coerce *limit* to a bounded int."""
     if limit is None:
@@ -134,10 +136,7 @@ def _normalize_str_list_input(value, field_name="value"):
             if isinstance(parsed, str):
                 s = parsed.strip()
                 return [s] if s else []
-            raise ValueError(
-                f"{field_name} must be a list of strings or a string, "
-                f"got JSON {type(parsed).__name__}"
-            )
+            raise ValueError(f"{field_name} must be a list of strings or a string, got JSON {type(parsed).__name__}")
         except json.JSONDecodeError:
             pass
         parts = [p.strip() for p in raw.split(",") if p.strip()]
@@ -155,10 +154,7 @@ def _resolve_collection_names(zot, names, ctx=None):
     results = []
     for name in names:
         name_lower = name.lower()
-        matches = [
-            c["key"] for c in all_collections
-            if c.get("data", {}).get("name", "").lower() == name_lower
-        ]
+        matches = [c["key"] for c in all_collections if c.get("data", {}).get("name", "").lower() == name_lower]
         if not matches:
             raise ValueError(f"No collection found matching name '{name}'")
         if len(matches) > 1 and ctx is not None:
@@ -198,7 +194,8 @@ def _normalize_arxiv_id(raw):
     if s.lower().startswith("http://") or s.lower().startswith("https://"):
         m = re.search(
             r"arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5}(?:v\d+)?|[a-z\-]+/\d{7}(?:v\d+)?)(?:\.pdf)?",
-            s, flags=re.IGNORECASE,
+            s,
+            flags=re.IGNORECASE,
         )
         if not m:
             return None
@@ -213,6 +210,7 @@ def _normalize_arxiv_id(raw):
 # ---------------------------------------------------------------------------
 # PDF / open-access helpers
 # ---------------------------------------------------------------------------
+
 
 def _download_and_attach_pdf(write_zot, item_key, pdf_url, doi, ctx):
     """Download a PDF from a URL and attach it to a Zotero item."""
@@ -306,8 +304,7 @@ def _try_arxiv_from_crossref(crossref_metadata, ctx):
         return None
     try:
         relations = crossref_metadata.get("relation", {})
-        for rel_type in ("has-preprint", "is-preprint-of", "is-identical-to",
-                         "is-version-of", "has-version"):
+        for rel_type in ("has-preprint", "is-preprint-of", "is-identical-to", "is-version-of", "has-version"):
             for rel in relations.get(rel_type, []):
                 rel_id = rel.get("id", "")
                 if rel.get("id-type") == "arxiv" and rel_id:
@@ -367,8 +364,7 @@ def _try_pmc(doi, ctx):
     try:
         conv_resp = requests.get(
             "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/",
-            params={"ids": doi, "format": "json", "tool": "zotero-mcp",
-                    "email": "zotero-mcp@users.noreply.github.com"},
+            params={"ids": doi, "format": "json", "tool": "zotero-mcp", "email": "zotero-mcp@users.noreply.github.com"},
             timeout=10,
         )
         if conv_resp.status_code != 200:
@@ -390,8 +386,7 @@ def _try_pmc(doi, ctx):
         return None
 
 
-def _try_attach_oa_pdf(write_zot, item_key, doi, ctx, crossref_metadata=None,
-                       attach_mode="auto"):
+def _try_attach_oa_pdf(write_zot, item_key, doi, ctx, crossref_metadata=None, attach_mode="auto"):
     """Attempt to find and attach an open-access PDF for a DOI."""
     sources = [
         ("Unpaywall", lambda: _try_unpaywall(doi, ctx)),
@@ -435,6 +430,7 @@ def _try_attach_oa_pdf(write_zot, item_key, doi, ctx, crossref_metadata=None,
 # ---------------------------------------------------------------------------
 # Citation key helpers
 # ---------------------------------------------------------------------------
+
 
 def _extra_has_citekey(extra: str, citekey: str) -> bool:
     """Check if the Extra field contains the given citation key."""
@@ -480,6 +476,7 @@ def _format_bbt_result(bbt_item: dict, citekey: str) -> str:
 # ---------------------------------------------------------------------------
 # Token estimation helpers
 # ---------------------------------------------------------------------------
+
 
 def _estimate_tokens(text: str) -> int:
     """Rough token estimate at ~4 characters per token."""

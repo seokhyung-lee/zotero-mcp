@@ -4,8 +4,13 @@ Zotero MCP - Model Context Protocol server for Zotero
 This module provides tools for AI assistants to interact with Zotero libraries.
 """
 
-from ._version import __version__
-from .server import mcp
+from ._version import __version__ as __version__
 
-# These modules are not imported by default but are available
-# pdfannots_helper and pdfannots_downloader
+
+def __getattr__(name: str):
+    """Lazily import heavyweight package attributes on first access."""
+    if name == "mcp":
+        from .server import mcp
+
+        return mcp
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -2,16 +2,16 @@
 
 import sys
 import types
-import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import MagicMock
+
+from conftest import FakeZotero
 
 from zotero_mcp import server
-from conftest import DummyContext, FakeZotero, _FakeResponse
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class FakeZoteroForFile(FakeZotero):
     """FakeZotero extended with attachment_both stub."""
@@ -114,6 +114,7 @@ def _patch_fitz(monkeypatch, doc):
 # Happy path: PDF file exists, no DOI found, creates document + attachment
 # ---------------------------------------------------------------------------
 
+
 class TestHappyPathNoDoi:
     def test_creates_document_item_and_attachment(self, monkeypatch, dummy_ctx):
         fake_zot = FakeZoteroForFile()
@@ -172,6 +173,7 @@ class TestHappyPathNoDoi:
 # ---------------------------------------------------------------------------
 # DOI extraction from PDF metadata -> delegates to add_by_doi logic
 # ---------------------------------------------------------------------------
+
 
 class TestDoiFromMetadata:
     def test_doi_in_subject_field(self, monkeypatch, dummy_ctx):
@@ -246,17 +248,14 @@ class TestDoiFromMetadata:
 # DOI extraction from first page text
 # ---------------------------------------------------------------------------
 
+
 class TestDoiFromFirstPageText:
     def test_doi_in_first_page_text(self, monkeypatch, dummy_ctx):
         fake_zot = FakeZoteroForFile()
         _patch_path_valid(monkeypatch)
         _patch_hybrid_mode(monkeypatch, fake_zot)
 
-        first_page = (
-            "Journal of Example Studies, Vol 5\n"
-            "DOI: 10.1000/xyz123\n"
-            "Abstract: This paper discusses..."
-        )
+        first_page = "Journal of Example Studies, Vol 5\nDOI: 10.1000/xyz123\nAbstract: This paper discusses..."
         fake_doc = FakeFitzDocument(
             metadata={"subject": "", "keywords": ""},
             first_page_text=first_page,
@@ -321,6 +320,7 @@ class TestDoiFromFirstPageText:
 # ---------------------------------------------------------------------------
 # Invalid file extension -> error
 # ---------------------------------------------------------------------------
+
 
 class TestInvalidFileExtension:
     def test_rejects_exe_extension(self, monkeypatch, dummy_ctx):
@@ -403,6 +403,7 @@ class TestInvalidFileExtension:
 # File doesn't exist -> error
 # ---------------------------------------------------------------------------
 
+
 class TestFileDoesNotExist:
     def test_nonexistent_file(self, monkeypatch, dummy_ctx):
         fake_zot = FakeZoteroForFile()
@@ -447,6 +448,7 @@ class TestFileDoesNotExist:
 # Non-absolute path -> error
 # ---------------------------------------------------------------------------
 
+
 class TestNonAbsolutePath:
     def test_relative_path_rejected(self, monkeypatch, dummy_ctx):
         fake_zot = FakeZoteroForFile()
@@ -485,6 +487,7 @@ class TestNonAbsolutePath:
 # Path validation: reject symlinks (security)
 # ---------------------------------------------------------------------------
 
+
 class TestSymlinkRejection:
     def test_symlink_rejected(self, monkeypatch, dummy_ctx):
         fake_zot = FakeZoteroForFile()
@@ -509,6 +512,7 @@ class TestSymlinkRejection:
 # ---------------------------------------------------------------------------
 # Hybrid mode / local-only rejection
 # ---------------------------------------------------------------------------
+
 
 class TestHybridModeRejection:
     def test_local_only_mode_returns_error(self, monkeypatch, dummy_ctx):
@@ -571,6 +575,7 @@ class TestHybridModeRejection:
 # ---------------------------------------------------------------------------
 # Tags and collections applied
 # ---------------------------------------------------------------------------
+
 
 class TestTagsAndCollections:
     def test_tags_applied_to_created_item(self, monkeypatch, dummy_ctx):
@@ -668,6 +673,7 @@ class TestTagsAndCollections:
 # Uses attachment_both (not attachment_simple)
 # ---------------------------------------------------------------------------
 
+
 class TestAttachmentBoth:
     def test_calls_attachment_both_not_simple(self, monkeypatch, dummy_ctx):
         """Verify attachment_both is called with correct (basename, full_path) tuple."""
@@ -722,9 +728,7 @@ class TestAttachmentBoth:
     def test_attachment_simple_not_used(self, monkeypatch, dummy_ctx):
         """Ensure attachment_simple is never called (it stores full paths as filenames)."""
         fake_zot = FakeZoteroForFile()
-        fake_zot.attachment_simple = MagicMock(side_effect=AssertionError(
-            "attachment_simple should not be called"
-        ))
+        fake_zot.attachment_simple = MagicMock(side_effect=AssertionError("attachment_simple should not be called"))
         _patch_path_valid(monkeypatch)
         _patch_hybrid_mode(monkeypatch, fake_zot)
 
